@@ -1,0 +1,24 @@
+diff --git a/arch/x86/kvm/hyperv.c b/arch/x86/kvm/hyperv.c
+index f35fae3a7..af0e4d446 100644
+--- a/arch/x86/kvm/hyperv.c
++++ b/arch/x86/kvm/hyperv.c
+@@ -2679,6 +2679,19 @@ int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
+ 			break;
+ 		}
+ 		goto hypercall_userspace_exit;
++	case HVCALL_RETARGET_INTERRUPT:
++		/*
++		 * Retarget a VPCI device interrupt (an MSI/MSI-X affinity change).
++		 * The device's interrupt routing table lives in the userspace VMM,
++		 * not in KVM, so forward the call there.  The input is a memory
++		 * structure at ingpa; the register-only (fast) form is not defined
++		 * for it, so reject that.
++		 */
++		if (unlikely(hc.fast)) {
++			ret = HV_STATUS_INVALID_PARAMETER;
++			break;
++		}
++		goto hypercall_userspace_exit;
+ 	default:
+ 		ret = HV_STATUS_INVALID_HYPERCALL_CODE;
+ 		break;

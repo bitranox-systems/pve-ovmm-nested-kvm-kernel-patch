@@ -185,6 +185,25 @@ QEMU's `hv-enforce-cpuid` defaults off and PVE never sets it.
   `KVM_NESTED_HYPERV_RELAY_POST_MESSAGE | KVM_NESTED_HYPERV_RELAY_SIGNAL_EVENT`;
   stores the mask in `kvm->arch.nested_hv_relay_mask`.
 
+## VPCI interrupt retargeting (independent of the relay)
+
+The build also forwards one hypercall that has nothing to do with nesting:
+`HvCallRetargetDeviceInterrupt` (`HVCALL_RETARGET_INTERRUPT`, `0x7e`). A guest
+issues it to move a VPCI device's MSI/MSI-X interrupt to a different target
+processor set, i.e. an IRQ-affinity change. `kvm_hv_hypercall` completes every
+call code it does not itself implement with `HV_STATUS_INVALID_HYPERCALL_CODE`
+and never exits to userspace, so without this the call fails and a Linux VPCI
+guest (`hv_pci`) logs `irq_retarget_interrupt() failed: 0x2` on every affinity
+change.
+
+The device's interrupt routing table lives in the userspace VMM (OpenVMM's
+`ApicSoftwareDevices`), not in KVM, so the call must be serviced there. The
+added `case HVCALL_RETARGET_INTERRUPT` in the `kvm_hv_hypercall` switch forwards
+it to userspace the same way `POST_MESSAGE` and `SIGNAL_EVENT` are, and rejects
+the register-only (fast) form. It is not gated on `nested_hv_relay_mask`: any
+guest with a VPCI device needs it, nested or not. OpenVMM services the forwarded
+call in its `virt_kvm` backend (the `RetargetDeviceInterrupt` handler).
+
 ## Windows kernel symbols relevant to boot
 
 Public PDBs: `ntkrnlmp.pdb`, `vmbus.pdb` (MS symbol server). RVAs are
@@ -239,7 +258,7 @@ operation; the faulting vCPU cannot flush mid-hypercall.
 
 ## Where the code lives
 
-| Repo | What it is |
-|------|-----------|
-| [github.com/bitranox/linux-nested-vmbus-relay](https://github.com/bitranox/linux-nested-vmbus-relay) | Fork of `kvm-x86/linux`, branch `rfc-nested-hyperv-hcall-relay`: the mainline RFC form as a single commit on top of `kvm-x86/next`. |
-| [github.com/bitranox/pve-ovmm-nested-kvm-kernel-patch](https://github.com/bitranox/pve-ovmm-nested-kvm-kernel-patch) | Proxmox VE kernel variant: a build script (anchored text insertions) plus this design doc, not a fork. |
+| Repo                                                                                                                 | What it is                                                                                                                          |
+|----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| [github.com/bitranox/linux-nested-vmbus-relay](https://github.com/bitranox/linux-nested-vmbus-relay)                 | Fork of `kvm-x86/linux`, branch `rfc-nested-hyperv-hcall-relay`: the mainline RFC form as a single commit on top of `kvm-x86/next`. |
+| [github.com/bitranox/pve-ovmm-nested-kvm-kernel-patch](https://github.com/bitranox/pve-ovmm-nested-kvm-kernel-patch) | Proxmox VE kernel variant: a build script (anchored text insertions) plus this design doc, not a fork.                              |

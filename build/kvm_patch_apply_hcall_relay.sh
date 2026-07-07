@@ -19,6 +19,12 @@
 #                                       hvgdk_mini include for them
 #   arch/x86/kvm/hyperv.c             + translate the relayed L2 synic post GPA
 #
+# Plus one independent edit (not part of the nested relay):
+#   arch/x86/kvm/hyperv.c             + forward HvCallRetargetDeviceInterrupt (0x7e)
+#                                       to userspace so a guest can retarget a VPCI
+#                                       device interrupt (MSI/MSI-X affinity change);
+#                                       stock KVM rejects it with INVALID_HYPERCALL_CODE
+#
 # Rebuilds kvm.ko + kvm-intel.ko. No Windows guest patch.
 #
 # Optional timer-storm guard (GUARD=1, default off): on a host without VMX TSC
@@ -212,6 +218,41 @@ def hyperv_c(t):
 "\tswitch (hc.code) {\n")
     return t.replace(anchor, blk, 1)
 
+def hyperv_c_retarget(t):
+    # Independent of the nested relay above: forward the guest's own
+    # HvCallRetargetDeviceInterrupt (a VPCI MSI/MSI-X affinity change) to the
+    # userspace VMM. KVM implements no VPCI interrupt routing table -- the device
+    # model and its routing live in userspace -- and stock KVM has no case for
+    # this code, so it falls through kvm_hv_hypercall()'s switch to the default arm
+    # and the guest gets HV_STATUS_INVALID_HYPERCALL_CODE (a Linux VPCI guest logs
+    # a failed hv_pci irq_retarget_interrupt()). Add a case that exits to userspace
+    # like POST_MESSAGE does. Needed for any (non-nested) guest with a VPCI device,
+    # so it is deliberately not gated on nested_hv_relay_mask.
+    if "HVCALL_RETARGET_INTERRUPT" in t: return None
+    anchor = ("\tdefault:\n"
+              "\t\tret = HV_STATUS_INVALID_HYPERCALL_CODE;\n"
+              "\t\tbreak;\n"
+              "\t}\n"
+              "\n"
+              "hypercall_complete:\n")
+    if anchor not in t:
+        raise SystemExit("hyperv.c: kvm_hv_hypercall switch default arm not found")
+    case = (
+"\tcase HVCALL_RETARGET_INTERRUPT:\n"
+"\t\t/*\n"
+"\t\t * Retarget a VPCI device interrupt (an MSI/MSI-X affinity change).\n"
+"\t\t * The device's interrupt routing table lives in the userspace VMM,\n"
+"\t\t * not in KVM, so forward the call there.  The input is a memory\n"
+"\t\t * structure at ingpa; the register-only (fast) form is not defined\n"
+"\t\t * for it, so reject that.\n"
+"\t\t */\n"
+"\t\tif (unlikely(hc.fast)) {\n"
+"\t\t\tret = HV_STATUS_INVALID_PARAMETER;\n"
+"\t\t\tbreak;\n"
+"\t\t}\n"
+"\t\tgoto hypercall_userspace_exit;\n")
+    return t.replace(anchor, case + anchor, 1)
+
 edit("include/uapi/linux/kvm.h", cap_def)
 edit("arch/x86/include/uapi/asm/kvm.h", bits_def)
 edit("arch/x86/include/asm/kvm_host.h", kvm_host_h)
@@ -220,6 +261,7 @@ edit("arch/x86/kvm/vmx/nested.c", nested_c_include)
 edit("arch/x86/kvm/vmx/nested.c", nested_c_relay_param)
 edit("arch/x86/kvm/vmx/nested.c", nested_c)
 edit("arch/x86/kvm/hyperv.c", hyperv_c)
+edit("arch/x86/kvm/hyperv.c", hyperv_c_retarget)
 print("edits done")
 PY
 

@@ -1,0 +1,52 @@
+From 3a0945ac4b15576e84642e9eec4b88ca873c2c2c Mon Sep 17 00:00:00 2001
+From: bitranox <rnowotny1966@gmail.com>
+Date: Tue, 7 Jul 2026 23:55:03 +0200
+Subject: [PATCH] KVM: x86: forward HvCallRetargetDeviceInterrupt to userspace
+
+kvm_hv_hypercall() completes every hypercall it does not itself implement
+with HV_STATUS_INVALID_HYPERCALL_CODE and does not exit to userspace. That
+includes HVCALL_RETARGET_INTERRUPT (0x7e), which a guest issues to move a
+VPCI device's MSI/MSI-X interrupt to a different target processor set.
+
+The interrupt routing table for such a device lives in the userspace VMM,
+not in KVM, so KVM cannot service the call in-kernel. A guest that drives
+Hyper-V VPCI passthrough (for example Linux hv_pci) then fails every
+IRQ-affinity change with "irq_retarget_interrupt() failed: 0x2".
+
+Forward HVCALL_RETARGET_INTERRUPT to userspace, the same way POST_MESSAGE
+and SIGNAL_EVENT are forwarded. The input is a memory structure at ingpa,
+so reject the register-only (fast) form.
+
+Assisted-by: Claude:claude-opus-4-8
+Signed-off-by: bitranox <rnowotny1966@gmail.com>
+---
+ arch/x86/kvm/hyperv.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/x86/kvm/hyperv.c b/arch/x86/kvm/hyperv.c
+index fd4eb1e561f7f..85fed81f81d9f 100644
+--- a/arch/x86/kvm/hyperv.c
++++ b/arch/x86/kvm/hyperv.c
+@@ -2681,6 +2681,19 @@ int kvm_hv_hypercall(struct kvm_vcpu *vcpu)
+ 			break;
+ 		}
+ 		goto hypercall_userspace_exit;
++	case HVCALL_RETARGET_INTERRUPT:
++		/*
++		 * Retarget a VPCI device interrupt (an MSI/MSI-X affinity change).
++		 * The device's interrupt routing table lives in the userspace VMM,
++		 * not in KVM, so forward the call there.  The input is a memory
++		 * structure at ingpa; the register-only (fast) form is not defined
++		 * for it, so reject that.
++		 */
++		if (unlikely(hc.fast)) {
++			ret = HV_STATUS_INVALID_PARAMETER;
++			break;
++		}
++		goto hypercall_userspace_exit;
+ 	default:
+ 		ret = HV_STATUS_INVALID_HYPERCALL_CODE;
+ 		break;
+-- 
+2.53.0
+

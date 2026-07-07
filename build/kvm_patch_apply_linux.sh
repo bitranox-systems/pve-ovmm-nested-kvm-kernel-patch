@@ -10,6 +10,7 @@
 #
 # Applies:
 #   patch/linux/kvm-nested-vmbus-relay-linux.patch   (rename + relay; cap 0x4f564d52)
+#   patch/linux/kvm-vpci-retarget-linux.patch        (forward HvCallRetargetDeviceInterrupt)
 #   patch/linux/kernel-timer-guard-linux.patch       (only with GUARD=1)
 #
 # It uses `patch -p1` (not `git am`), so the target need not be a git tree and no
@@ -67,6 +68,10 @@ apply_patch() {
 
 echo "== applying relay =="
 apply_patch "$PATCHDIR/kvm-nested-vmbus-relay-linux.patch"
+# Independent of the relay: forward the guest's own HvCallRetargetDeviceInterrupt
+# (VPCI MSI/MSI-X affinity change) to userspace. Applied unconditionally.
+echo "== applying VPCI interrupt retarget forward =="
+apply_patch "$PATCHDIR/kvm-vpci-retarget-linux.patch"
 if [ "$GUARD" = 1 ]; then
     echo "== applying timer-storm guard =="
     apply_patch "$PATCHDIR/kernel-timer-guard-linux.patch"
