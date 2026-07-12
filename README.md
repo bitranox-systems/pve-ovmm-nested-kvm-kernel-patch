@@ -64,7 +64,7 @@ text insertions) rather than as a fork.
 The **mainline** variant is an RFC posted to the KVM list; the corresponding
 patch-repo fork against `kvm-x86/linux` is at:
 
-  https://github.com/bitranox/linux-nested-vmbus-relay (branch `rfc-nested-hyperv-hcall-relay`)
+  https://github.com/bitranox-systems/linux-nested-vmbus-relay (branch `rfc-nested-hyperv-hcall-relay`)
 
 ## Building for a Proxmox VE kernel
 
@@ -133,7 +133,7 @@ script (`build/kvm_patch_apply_hcall_relay.sh`) remains the source of truth for
 what gets applied: it inserts the relay by anchored text edits that track
 point-release drift where a static patch would not, and applies the guard patch
 when `GUARD=1`. The mainline-form patches (the upstream RFC, same cap 0x4f564d52) are at
-`github.com/bitranox/linux-nested-vmbus-relay` on branch `rfc-nested-hyperv-hcall-relay`.
+`github.com/bitranox-systems/linux-nested-vmbus-relay` on branch `rfc-nested-hyperv-hcall-relay`.
 
 ## Design
 

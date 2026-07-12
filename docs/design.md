@@ -258,7 +258,7 @@ operation; the faulting vCPU cannot flush mid-hypercall.
 
 ## Where the code lives
 
-| Repo                                                                                                                 | What it is                                                                                                                          |
-|----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| [github.com/bitranox/linux-nested-vmbus-relay](https://github.com/bitranox/linux-nested-vmbus-relay)                 | Fork of `kvm-x86/linux`, branch `rfc-nested-hyperv-hcall-relay`: the mainline RFC form as a single commit on top of `kvm-x86/next`. |
-| [github.com/bitranox/pve-ovmm-nested-kvm-kernel-patch](https://github.com/bitranox/pve-ovmm-nested-kvm-kernel-patch) | Proxmox VE kernel variant: a build script (anchored text insertions) plus this design doc, not a fork.                              |
+| Repo                                                                                                                                 | What it is                                                                                                                          |
+|--------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| [github.com/bitranox-systems/linux-nested-vmbus-relay](https://github.com/bitranox-systems/linux-nested-vmbus-relay)                 | Fork of `kvm-x86/linux`, branch `rfc-nested-hyperv-hcall-relay`: the mainline RFC form as a single commit on top of `kvm-x86/next`. |
+| [github.com/bitranox-systems/pve-ovmm-nested-kvm-kernel-patch](https://github.com/bitranox-systems/pve-ovmm-nested-kvm-kernel-patch) | Proxmox VE kernel variant: a build script (anchored text insertions) plus this design doc, not a fork.                              |

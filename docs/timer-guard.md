@@ -182,4 +182,4 @@ state in `struct kvm_vcpu_hv_stimer`).
 The mainline form of this guard is an RFC against the KVM list, with the
 corresponding patch on the `rfc-kernel-timer-guard` branch of:
 
-  https://github.com/bitranox/linux-nested-vmbus-relay
+  https://github.com/bitranox-systems/linux-nested-vmbus-relay
