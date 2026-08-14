@@ -151,3 +151,32 @@ index fd4eb1e561f7..0dbc2af86ae2 100644
  
  	trace_kvm_hv_stimer_start_one_shot(hv_stimer_to_vcpu(stimer)->vcpu_id,
  					   stimer->index,
+@@ -704,8 +814,28 @@ static int stimer_set_config(struct kvm_vcpu_hv_stimer *stimer, u64 config,
+ 
+ 	trace_kvm_hv_stimer_set_config(hv_stimer_to_vcpu(stimer)->vcpu_id,
+ 				       stimer->index, config, host);
+ 
++	/*
++	 * A host-initiated config write is a VMM state load: a reset in place, a
++	 * restore, or the destination end of a migration. The storm history below
++	 * describes a run that no longer exists, so drop it. Otherwise a throttle
++	 * one guest earned keeps dwelling for the next one, which has never armed
++	 * a past-dated deadline (measured: dwell 2000000 with fire_count 17
++	 * surviving a reset in place on vp-0 idx=0).
++	 *
++	 * This cannot live in stimer_cleanup(): that also runs on the guest's hot
++	 * re-arm path (~26k/s under a storm, because an auto-enable one-shot
++	 * rewrites the config on every fire), where clearing would forget the
++	 * history continuously and defeat the guard.
++	 */
++	if (host) {
++		stimer->imm_fire_ns = 0;
++		stimer->imm_fire_count = 0;
++		stimer->imm_dwell_ns = 0;
++		stimer->imm_future_count = 0;
++	}
++
+ 	stimer_cleanup(stimer);
+ 	if (old_config.enable &&
+ 	    !new_config.direct_mode && new_config.sintx == 0)
+ 		new_config.enable = 0;

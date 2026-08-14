@@ -42,4 +42,8 @@ echo "== build artefacts =="
 echo "  vermagic=$(modinfo -F vermagic "$SRC/arch/x86/kvm/kvm.ko" 2>/dev/null)"
 echo "  srcversion=$(modinfo -F srcversion "$SRC/arch/x86/kvm/kvm.ko" 2>/dev/null)"
 echo "  cap=$(grep -c '0x4f564d52' "$SRC/include/uapi/linux/kvm.h" 2>/dev/null) (relay) ; guard params=$(modinfo -p "$SRC/arch/x86/kvm/kvm.ko" 2>/dev/null | grep -c hv_stimer)"
+# The guard's state-load clear is a separate hunk from the storm detection, so a partial
+# apply builds and loads and simply carries a throttle across every reset. It has to be
+# named on its own; "guard params=2" says nothing about it.
+echo "  state-load clear=$(grep -c 'stimer->imm_fire_ns = 0;' "$SRC/arch/x86/kvm/hyperv.c" 2>/dev/null) (want 1)"
 echo "== installed for $(uname -r). Activate (0 VMs): rmmod kvm_intel kvm && modprobe kvm_intel =="

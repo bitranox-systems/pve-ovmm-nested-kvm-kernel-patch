@@ -74,6 +74,33 @@ An isolated past-dated one-shot still fires immediately. The TLFS-visible
 behaviour is unchanged for any non-storming use; only a sustained immediate-fire
 loop is slowed.
 
+## The state carried across a VMM state load
+
+The four detection fields live in `struct kvm_vcpu_hv_stimer`, which a reset IN
+PLACE reuses along with the vCPU. So the throttle one guest earned would carry
+into the next one, which has never armed a past-dated deadline: it would start
+life dwelling up to the cap on every past-dated arm. A restore, and the
+destination end of a migration, load state from a different run entirely and have
+the same problem.
+
+`stimer_set_config()` therefore clears all four fields when `host` is set, which
+is true exactly for the userspace `KVM_SET_MSRS` a reset, a restore or an
+incoming migration issues, and never for a guest write.
+
+It cannot go in `stimer_cleanup()`, which looks like the obvious place: that also
+runs on the guest's hot re-arm path, roughly 26k times a second under a storm,
+because an auto-enable one-shot rewrites its config on every fire. Clearing there
+would forget the history continuously, so the loop would never be detected and
+the guard would never engage at all.
+
+Both halves are worth checking after a build, since a partial apply builds and
+loads perfectly well:
+
+```bash
+grep -c 'imm_fire_count > HV_STIMER_IMM_MAX' arch/x86/kvm/hyperv.c   # detection
+grep -c 'stimer->imm_fire_ns = 0;'           arch/x86/kvm/hyperv.c   # state-load clear
+```
+
 ## The TSC-scaling gate
 
 The guard is gated on `!kvm_caps.has_tsc_control`. On a TSC-scaling host that
@@ -86,10 +113,10 @@ older hosts where the storm is possible.
 
 Two sysfs-writable module parameters control the guard:
 
-| Parameter                    | Default            | What it does                                                          |
-|------------------------------|--------------------|----------------------------------------------------------------------|
-| `hv_stimer_guard_enabled`    | on                 | Master switch (bool). Inert on a TSC-scaling host regardless.        |
-| `hv_stimer_imm_dwell_max_ns` | 2000000 (2 ms)     | Caps how far the adaptive dwell backs off (nanoseconds).             |
+| Parameter                    | Default        | What it does                                                  |
+|------------------------------|----------------|---------------------------------------------------------------|
+| `hv_stimer_guard_enabled`    | on             | Master switch (bool). Inert on a TSC-scaling host regardless. |
+| `hv_stimer_imm_dwell_max_ns` | 2000000 (2 ms) | Caps how far the adaptive dwell backs off (nanoseconds).      |
 
 The detection thresholds, the initial dwell, the backoff factor, and the release
 hysteresis are fixed constants. Tuning across idle and nested-container load
@@ -127,19 +154,19 @@ At a single moderate load point:
 
 | Config                        | storm/s | 7-Zip MIPS | disk MiB/s | disk IOPS | usable                  |
 |-------------------------------|--------:|-----------:|-----------:|----------:|-------------------------|
-| process isolation, no Hyper-V |     ~0  |      3491  |       399  |     102k  | baseline (no nested VM) |
-| Hyper-V iso + kernel guard    |     ~8k |      3015  |      53.0  |     13.6k | yes                     |
-| Hyper-V iso + no mitigation   |   ~2.5M |        -   |        -   |       -   | no (storm, unreachable) |
-| Hyper-V iso + ovm-timer-guard |     ~0  |      2900  |      46.6  |     11.9k | yes                     |
+| process isolation, no Hyper-V | ~0      | 3491       | 399        | 102k      | baseline (no nested VM) |
+| Hyper-V iso + kernel guard    | ~8k     | 3015       | 53.0       | 13.6k     | yes                     |
+| Hyper-V iso + no mitigation   | ~2.5M   | -          | -          | -         | no (storm, unreachable) |
+| Hyper-V iso + ovm-timer-guard | ~0      | 2900       | 46.6       | 11.9k     | yes                     |
 
 Disk throughput depends on queue depth. Swept over concurrency (same 4K-random
 base):
 
 | Disk load | kernel-guard MiB/s | kernel-guard IOPS | ovm-guard MiB/s | ovm-guard IOPS |
 |-----------|-------------------:|------------------:|----------------:|---------------:|
-| -o4  -t2  |              53.0  |            13566  |           46.6  |          11930 |
-| -o16 -t2  |              43.7  |            11187  |           48.3  |          12364 |
-| -o32 -t4  |              27.8  |             7122  |           38.5  |           9857 |
+| -o4  -t2  | 53.0               | 13566             | 46.6            | 11930          |
+| -o16 -t2  | 43.7               | 11187             | 48.3            | 12364          |
+| -o32 -t4  | 27.8               | 7122              | 38.5            | 9857           |
 
 CPU throughput is within a few percent either way (the guard's residual storm
 against the ovm-guard's trapped time reads). Disk is the differentiator: under
