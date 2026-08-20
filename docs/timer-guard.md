@@ -1,10 +1,40 @@
 # Bounding past-dated one-shot Hyper-V timer re-arm storms
 
-Status: with the hypercall relay alone, a nested Hyper-V guest boots on a host
-without VMX TSC scaling, but it can hang at a no-taskbar desktop. The cause is a
-synthetic-timer re-arm storm in the L1 root partition. This guard bounds the
-storm in `stimer_start()` and is needed alongside the relay on such hosts; on a
-TSC-scaling host it is inert.
+Status: OPT-IN, and NOT applied by the default build since 2026-08-20. The guard
+bounds a synthetic-timer re-arm storm in the L1 root partition, which used to hang
+a nested Hyper-V guest at a no-taskbar desktop on a host without VMX TSC scaling.
+The storm is now eliminated at its source in the userspace VMM, so the default
+build is the relay alone. The patch, the parameters and the analysis below stay
+here for a host running a VMM without that fix, and because the mainline RFC form
+is still in flight.
+
+## Why the default changed (2026-08-20)
+
+The guard treats the symptom: it slows a re-arm loop that should not be forming.
+The loop formed because the deadline the guest armed read as already past by the
+time KVM evaluated it, and that is a property of what the guest computes its
+deadline from.
+
+OpenVMM now aligns the guest TSC at partition creation and again on reset, so the
+Hyper-V partition reference counter LEADS the kvmclock KVM compares deadlines
+against by a verified floor. It reads the pairing from KVM's own
+`KVM_CLOCK_HOST_TSC` rather than deriving it, and checks the achieved lead after
+the write, logging an error if it misses the floor.
+
+The effect is on the arms themselves, not on how fast they are served: the
+past-dated one-shot arm rate fell from about 1.88 M/s to 0.02-0.03/s, and reads
+the same with the guard enabled and disabled, which is what says the guard is no
+longer doing the work. Guard-disabled reset campaigns on both nested-VBS cells
+(63002, 63003) reached a responsive desktop 36/37, then 51/51, then 153/153, with
+zero floor errors across the confirmation boots.
+
+One intermittent wedge remains open, and it is a separate defect: it shows ZERO
+stimer expirations at the moment of observation against 38,584 on a healthy
+comparison, so it is not this storm, and it is not attributable to the guard
+either (2 in 215 guard-off runs versus 0 in 150 guard-on, Fisher p=0.51).
+
+Removing the guard from the default build was validated on proxmox06 by rebuilding
+`kvm.ko`/`kvm-intel.ko` without it and re-running both cells cold and warm.
 
 ## When the guard is needed
 
@@ -192,17 +222,23 @@ mixed and bursty rather than steadily one or the other.
 
 ## Building with the guard
 
-The guard is opt-in in the build script:
+The guard is opt-in in both build scripts, and off unless asked for:
 
 ```bash
 GUARD=1 KVM_RELAY_SRC=/path/to/linux-source ./build/kvm_patch_apply_hcall_relay.sh
+GUARD=1 ./build/build-kvm-relay-guard.sh    # on a PVE host: fresh worktree, then the above
 ```
 
-It applies `patch/kernel-timer-guard-pve.patch` after the relay edits, then
-builds `kvm.ko` + `kvm-intel.ko` as usual. Without `GUARD=1` the script builds
+It applies `patch/pve/kernel-timer-guard-pve.patch` after the relay edits, then
+builds `kvm.ko` + `kvm-intel.ko` as usual. Without `GUARD=1` the scripts build
 the relay only. The patch edits `arch/x86/kvm/hyperv.c` (the guard logic and the
 two module params) and `arch/x86/include/asm/kvm_host.h` (the per-stimer guard
 state in `struct kvm_vcpu_hv_stimer`).
+
+Which build a host is running is readable without rebuilding anything: a
+guard-ful `kvm.ko` publishes `hv_stimer_guard_enabled` and
+`hv_stimer_imm_dwell_max_ns` under `/sys/module/kvm/parameters/`, and a guard-less
+one publishes neither.
 
 ## The mainline variant
 
