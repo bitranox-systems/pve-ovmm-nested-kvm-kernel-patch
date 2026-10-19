@@ -1,12 +1,12 @@
 # Bounding past-dated one-shot Hyper-V timer re-arm storms
 
-Status: OPT-IN, and NOT applied by the default build since 2026-08-20. The guard
-bounds a synthetic-timer re-arm storm in the L1 root partition, which used to hang
-a nested Hyper-V guest at a no-taskbar desktop on a host without VMX TSC scaling.
-The storm is now eliminated at its source in the userspace VMM, so the default
-build is the relay alone. The patch, the parameters and the analysis below stay
-here for a host running a VMM without that fix, and because the mainline RFC form
-is still in flight.
+Status: ARCHIVED. No build applies this patch, and the build scripts refuse
+`GUARD=1`. The guard bounds a synthetic-timer re-arm storm in the L1 root
+partition, which used to hang a nested Hyper-V guest at a no-taskbar desktop on a
+host without VMX TSC scaling. The storm is now eliminated at its source in the
+userspace VMM, so the guard has nothing left to bound. The patches and the
+analysis below are kept for reference, and for a host whose VMM predates that
+fix (see "Applying it by hand").
 
 ## Why the default changed (2026-08-20)
 
@@ -213,7 +213,7 @@ mixed and bursty rather than steadily one or the other.
 
 - Leave the guard out. With a VMM that aligns the guest TSC as described above, the
   storm does not form and the guard has nothing to bound.
-- Build it in (`GUARD=1`) only on a host whose VMM predates that alignment. There,
+- Apply it by hand only on a host whose VMM predates that alignment. There,
   the 2 ms cap is the baseline: it is host-global, self-tuning, needs no per-VM
   setup, and serves interactive, mixed, and CPU-bound nested guests well.
 - For a host that mostly runs disk-heavy nested work, either lower the cap (which
@@ -222,18 +222,21 @@ mixed and bursty rather than steadily one or the other.
   storm.
 - If the kernel cannot be patched, the ovm-timer-guard is the per-VM fallback.
 
-## Building with the guard
+## Applying it by hand
 
-The guard is opt-in in both build scripts, and off unless asked for:
+The build scripts no longer apply the guard. To build it anyway, build the relay
+without installing, apply the archived patch to the same source tree, then
+rebuild and install both modules:
 
 ```bash
-GUARD=1 KVM_RELAY_SRC=/path/to/linux-source ./build/kvm_patch_apply_hcall_relay.sh
-GUARD=1 ./build/build-kvm-relay-guard.sh    # on a PVE host: fresh worktree, then the above
+INSTALL=0 KVM_RELAY_SRC=/path/to/linux-source ./build/kvm_patch_apply_hcall_relay.sh
+patch -p1 -d /path/to/linux-source < archive/timer-guard/kernel-timer-guard-pve.patch
+make -C /path/to/linux-source -j"$(nproc)" M=arch/x86/kvm
+# then copy kvm.ko + kvm-intel.ko into /lib/modules/$(uname -r)/kernel/arch/x86/kvm/ and run depmod -a
 ```
 
-It applies `patch/pve/kernel-timer-guard-pve.patch` after the relay edits, then
-builds `kvm.ko` + `kvm-intel.ko` as usual. Without `GUARD=1` the scripts build
-the relay only. The patch edits `arch/x86/kvm/hyperv.c` (the guard logic and the
+`kernel-timer-guard-linux.patch` is the same change for a mainline / kvm-x86
+tree, applied after the patches in `patch/linux/`. The patch edits `arch/x86/kvm/hyperv.c` (the guard logic and the
 two module params) and `arch/x86/include/asm/kvm_host.h` (the per-stimer guard
 state in `struct kvm_vcpu_hv_stimer`).
 
@@ -244,7 +247,7 @@ one publishes neither.
 
 ## The mainline variant
 
-The mainline form of this guard is an RFC against the KVM list, with the
-corresponding patch on the `rfc-kernel-timer-guard` branch of:
+The mainline form of this guard is kept on the `rfc-kernel-timer-guard` branch
+of:
 
   https://github.com/bitranox-systems/linux-nested-vmbus-relay

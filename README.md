@@ -83,11 +83,6 @@ Key steps:
 KVM_RELAY_SRC=/path/to/linux-source \
     ./build/kvm_patch_apply_hcall_relay.sh
 
-# The timer-storm guard is opt-in and no longer part of the default build
-# (2026-08-20; see "Timer-storm guard" below for why):
-GUARD=1 KVM_RELAY_SRC=/path/to/linux-source \
-    ./build/kvm_patch_apply_hcall_relay.sh
-
 # Activate (stop all VMs first):
 rmmod kvm_intel kvm && modprobe kvm_intel
 ```
@@ -97,60 +92,21 @@ installing. After loading, the userspace VMM (OpenVMM) enables the capability
 per-VM via `KVM_CAP_NESTED_HYPERV_HCALL_RELAY` with
 `args[0] = POST_MESSAGE | SIGNAL_EVENT` when nested virt is selected.
 
-## Timer-storm guard (opt-in; not applied by default since 2026-08-20)
+## Archived: the timer-storm guard
 
-The relay gets a nested Hyper-V guest booting, but on a host without VMX TSC
-scaling that used not to be enough on its own. There the L1 root partition's
-direct-mode one-shot synthetic timer could re-arm in a storm (the deadline read
-as past on the arming vCPU because the per-vCPU TSC phase was not exact), which
-pegged a host CPU and hung the guest at a no-taskbar desktop. The guard bounds
-the re-arm in the kernel's `stimer_start()` with an adaptive forward dwell.
-
-**The default build no longer applies it.** The storm is now removed at its
-source in the userspace VMM: OpenVMM aligns the guest TSC so the partition
-reference counter leads the kvmclock by a verified floor, on a cold boot and on a
-reset alike, using KVM's own `KVM_CLOCK_HOST_TSC` pairing, and logs an error if a
-write misses that floor. The arms the guard was throttling stop happening rather
-than being slowed: the measured past-dated arm rate fell from about 1.88 M/s to
-0.02-0.03/s, the same with the guard on and with it off, and warm-reset campaigns
-on both nested-VBS cells reached a responsive desktop with the guard off (36/37,
-then 51/51, then 153/153). A guard-less kernel is therefore the correct default
-on this host too.
-
-The patch and this document stay in the repo. Build with `GUARD=1` for a host
-whose VMM predates that TSC-alignment fix, or to reproduce the old behaviour.
-
-The guard is gated on `!kvm_caps.has_tsc_control`, so it is inert and costs
-nothing on a TSC-scaling (modern) CPU. Two sysfs module parameters control it:
-
-- `hv_stimer_guard_enabled` (default on): the master switch.
-- `hv_stimer_imm_dwell_max_ns` (default 2000000, i.e. 2 ms): the cap the adaptive
-  dwell backs off to. This is the one performance lever. Lower it (around 250 us)
-  for an IO-bound nested guest (about +56% in-guest container disk IOPS); raise it
-  (around 8 ms) for a CPU-bound one (about +12% CPU); 2 ms is a balanced default.
-
-Build the modules with the guard by setting `GUARD=1` (on either script; the
-wrapper forwards it):
-
-```bash
-GUARD=1 KVM_RELAY_SRC=/path/to/linux-source ./build/kvm_patch_apply_hcall_relay.sh
-GUARD=1 ./build/build-kvm-relay-guard.sh    # same, on a PVE host, fresh worktree
-```
-
-That applies `patch/pve/kernel-timer-guard-pve.patch` after the relay edits, then
-builds both modules. Without it, neither script touches the guard patch.
-`docs/timer-guard.md` covers the root cause, the adaptive dwell, the TSC-scaling
-gate, the measured IO-versus-CPU trade, and why the default changed.
+An earlier kernel patch bounded a past-dated synthetic-timer re-arm storm in the
+L1 root partition on hosts without VMX TSC scaling. OpenVMM now removes that storm
+at its source by aligning the guest TSC, so the guard has nothing left to bound
+and no build applies it. The patches and their write-up are kept in
+`archive/timer-guard/` for reference; the build scripts refuse `GUARD=1`.
 
 ## Patch files
 
-`patch/pve/kvm-nested-vmbus-relay-pve.patch` (the relay) and
-`patch/pve/kernel-timer-guard-pve.patch` (the timer-storm guard) are the current
-PVE-form diffs (cap `0x4f564d52`), provided as point-in-time snapshots. The build
-script (`build/kvm_patch_apply_hcall_relay.sh`) remains the source of truth for
-what gets applied: it inserts the relay by anchored text edits that track
-point-release drift where a static patch would not, and applies the guard patch
-when `GUARD=1`. The mainline-form patches (the upstream RFC, same cap 0x4f564d52) are at
+`patch/pve/kvm-nested-vmbus-relay-pve.patch` (the relay) is the current PVE-form
+diff (cap `0x4f564d52`), provided as a point-in-time snapshot. The build script
+(`build/kvm_patch_apply_hcall_relay.sh`) remains the source of truth for what gets
+applied: it inserts the relay by anchored text edits that track point-release
+drift where a static patch would not. The mainline-form patches (the upstream RFC, same cap 0x4f564d52) are at
 `github.com/bitranox-systems/linux-nested-vmbus-relay` on branch `rfc-nested-hyperv-hcall-relay`.
 
 ## Design

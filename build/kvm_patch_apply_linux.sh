@@ -11,7 +11,8 @@
 # Applies:
 #   patch/linux/kvm-nested-vmbus-relay-linux.patch   (rename + relay; cap 0x4f564d52)
 #   patch/linux/kvm-vpci-retarget-linux.patch        (forward HvCallRetargetDeviceInterrupt)
-#   patch/linux/kernel-timer-guard-linux.patch       (only with GUARD=1)
+#
+# The timer-storm guard is archived (archive/timer-guard/); GUARD=1 is refused.
 #
 # It uses `patch -p1` (not `git am`), so the target need not be a git tree and no
 # commits are created; the tree is just modified in place, then built. If you
@@ -19,8 +20,7 @@
 #
 # Env vars (same as the PVE applier):
 #   KVM_RELAY_SRC=<dir>   kernel source tree (searched for arch/x86/kvm/vmx/nested.c)
-#   GUARD=1               also apply the timer-storm guard (default off)
-#   INSTALL=0             build only, do not install (default installs)
+#   INSTALL=0            build only, do not install (default installs)
 #   KVM_RELAY_WORK=<dir>  fallback search root (default /usr/src/kvm-nested-relay)
 #
 # Rebuilds kvm.ko + kvm-intel.ko. No Windows guest patch. openvmm enables the cap
@@ -30,12 +30,15 @@ set -euo pipefail
 
 KREL="$(uname -r)"
 WORK="${KVM_RELAY_WORK:-/usr/src/kvm-nested-relay}"
-GUARD="${GUARD:-0}"
 INSTALL="${INSTALL:-1}"
 JOBS="$(nproc)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PATCHDIR="$HERE/../patch/linux"
 
+if [ "${GUARD:-0}" = 1 ]; then
+    echo "error: the timer-storm guard is archived; apply archive/timer-guard/kernel-timer-guard-linux.patch by hand (see archive/timer-guard/timer-guard.md)" >&2
+    exit 1
+fi
 [ "$(id -u)" = 0 ] || { echo "error: run as root" >&2; exit 1; }
 [ -f "/boot/config-${KREL}" ] || { echo "error: /boot/config-${KREL} missing" >&2; exit 1; }
 command -v make >/dev/null || { echo "error: install build-essential bc flex bison libelf-dev libssl-dev dwarves" >&2; exit 1; }
@@ -72,10 +75,6 @@ apply_patch "$PATCHDIR/kvm-nested-vmbus-relay-linux.patch"
 # (VPCI MSI/MSI-X affinity change) to userspace. Applied unconditionally.
 echo "== applying VPCI interrupt retarget forward =="
 apply_patch "$PATCHDIR/kvm-vpci-retarget-linux.patch"
-if [ "$GUARD" = 1 ]; then
-    echo "== applying timer-storm guard =="
-    apply_patch "$PATCHDIR/kernel-timer-guard-linux.patch"
-fi
 
 # --- configure to the running kernel and build the KVM modules -------------- #
 cd "$SRC"

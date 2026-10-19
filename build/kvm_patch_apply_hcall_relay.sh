@@ -27,20 +27,19 @@
 #
 # Rebuilds kvm.ko + kvm-intel.ko. No Windows guest patch.
 #
-# Optional timer-storm guard (GUARD=1, default off): on a host without VMX TSC
-# scaling the relay gets a nested Hyper-V guest booting, but the L1 root's
-# past-dated direct-mode one-shot synthetic timer can re-arm in a storm and hang
-# the guest. GUARD=1 applies patch/pve/kernel-timer-guard-pve.patch after the relay
-# edits, bounding the re-arm with an adaptive forward dwell. The guard is gated on
-# !kvm_caps.has_tsc_control, so it is inert and costs nothing on a TSC-scaling
-# (modern) CPU. See docs/timer-guard.md.
+# The timer-storm guard is archived (archive/timer-guard/) and no longer applied
+# by any build. GUARD=1 is refused rather than ignored, so a caller still asking
+# for it learns that instead of getting a guard-less build it did not expect.
 set -euo pipefail
 
 KREL="$(uname -r)"
 WORK="${KVM_RELAY_WORK:-/usr/src/kvm-nested-relay}"
-GUARD="${GUARD:-0}"
 JOBS="$(nproc)"
 
+if [ "${GUARD:-0}" = 1 ]; then
+    echo "error: the timer-storm guard is archived; apply archive/timer-guard/kernel-timer-guard-pve.patch by hand (see archive/timer-guard/timer-guard.md)" >&2
+    exit 1
+fi
 [ "$(id -u)" = 0 ] || { echo "error: run as root" >&2; exit 1; }
 [ -f "/boot/config-${KREL}" ] || { echo "error: /boot/config-${KREL} missing" >&2; exit 1; }
 command -v make >/dev/null || { echo "error: install build-essential bc flex bison libelf-dev libssl-dev dwarves" >&2; exit 1; }
@@ -264,22 +263,6 @@ edit("arch/x86/kvm/hyperv.c", hyperv_c)
 edit("arch/x86/kvm/hyperv.c", hyperv_c_retarget)
 print("edits done")
 PY
-
-# --- optional timer-storm guard (GUARD=1) ----------------------------------- #
-if [ "$GUARD" = 1 ]; then
-    GUARD_PATCH="$(dirname "$0")/../patch/pve/kernel-timer-guard-pve.patch"
-    [ -f "$GUARD_PATCH" ] || { echo "error: guard patch not found: $GUARD_PATCH" >&2; exit 1; }
-    # Idempotent under set -e: apply if it applies cleanly, skip if already
-    # applied (reverse applies), error only on real source drift.
-    if patch -p1 -d "$SRC" -N --dry-run < "$GUARD_PATCH" >/dev/null 2>&1; then
-        patch -p1 -d "$SRC" -N < "$GUARD_PATCH"
-        echo "  applied timer-storm guard"
-    elif patch -R -p1 -d "$SRC" --dry-run < "$GUARD_PATCH" >/dev/null 2>&1; then
-        echo "  timer-storm guard already applied; skipping"
-    else
-        echo "error: timer-storm guard does not apply (kernel source drift?)" >&2; exit 1
-    fi
-fi
 
 # --- configure to the running kernel and build the KVM modules -------------- #
 cd "$SRC"

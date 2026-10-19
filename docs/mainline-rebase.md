@@ -5,9 +5,8 @@ same base the upstream RFC branches sit on). `kvm-x86/next` rebases onto newer
 mainline often, so the patches need a small rebase before an upstream submission.
 
 Last verified 2026-06-24 against `kvm-x86/next` at `9d4853b044bee` (about 1.3M
-commits past the pinned base). Both patches apply and the kvm + kvm-intel modules
-compile with exactly two trivial deltas in the relay patch; the timer-guard patch
-needs none.
+commits past the pinned base). The patches apply and the kvm + kvm-intel modules
+compile with exactly two trivial deltas in the relay patch.
 
 ## Deltas when rebasing the relay onto current kvm-x86
 
@@ -22,9 +21,6 @@ needs none.
 2. **`arch/x86/kvm/vmx/nested.c` (API rename).** `kvm_rcx_write()` was removed and
    the GPR accessors gained a `_raw` suffix (`kvm_cache_regs.h` was also renamed
    to `regs.h`). Use `kvm_rcx_write_raw()`.
-
-The timer-guard patch (`arch/x86/kvm/hyperv.c`, `arch/x86/include/asm/kvm_host.h`)
-applies and compiles unchanged.
 
 ## Build note
 
