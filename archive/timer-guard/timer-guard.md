@@ -173,7 +173,8 @@ throughput: the best-IO setting ran the higher storm.
 
 ## Kernel guard versus the userland ovm-timer-guard
 
-OpenVMM also ships a userland alternative, the per-VM `--ovm-timer-guard`. It
+There was also a userland alternative, the per-VM `--ovm-timer-guard`, now removed
+as well (the same effect is `no_reference_tsc_page` in an explicit `hv=`). It
 drops the Hyper-V reference TSC page so KVM serves time from kvmclock; the storm
 then never forms, with no kernel patch at all, at the cost of trapped Hyper-V time
 reads. The two mitigations were compared in a nested Windows 11 guest running an
@@ -218,9 +219,9 @@ mixed and bursty rather than steadily one or the other.
   setup, and serves interactive, mixed, and CPU-bound nested guests well.
 - For a host that mostly runs disk-heavy nested work, either lower the cap (which
   recovers IOPS host-wide at the price of more host CPU) or put the heaviest-IO
-  VMs on the per-VM `--ovm-timer-guard` for the best disk scaling with no residual
+  VMs on `no_reference_tsc_page` for the best disk scaling with no residual
   storm.
-- If the kernel cannot be patched, the ovm-timer-guard is the per-VM fallback.
+- If the kernel cannot be patched, `no_reference_tsc_page` is the per-VM fallback.
 
 ## Applying it by hand
 
@@ -247,7 +248,7 @@ one publishes neither.
 
 ## The mainline variant
 
-The mainline form of this guard is kept on the `rfc-kernel-timer-guard` branch
+The mainline form of this guard is kept at the tag `archive/rfc-kernel-timer-guard`
 of:
 
   https://github.com/bitranox-systems/linux-nested-vmbus-relay
