@@ -211,9 +211,11 @@ agents and self-hosted runners) and nested dev/test guests, which are CPU-heavy
 while compiling and disk-heavy while checking out and restoring, so the load is
 mixed and bursty rather than steadily one or the other.
 
-- Default to the kernel guard at the 2 ms cap. It is host-global, self-tuning, and
-  needs no per-VM setup, and it serves interactive, mixed, and CPU-bound nested
-  guests well. This is the right baseline for most hosts.
+- Leave the guard out. With a VMM that aligns the guest TSC as described above, the
+  storm does not form and the guard has nothing to bound.
+- Build it in (`GUARD=1`) only on a host whose VMM predates that alignment. There,
+  the 2 ms cap is the baseline: it is host-global, self-tuning, needs no per-VM
+  setup, and serves interactive, mixed, and CPU-bound nested guests well.
 - For a host that mostly runs disk-heavy nested work, either lower the cap (which
   recovers IOPS host-wide at the price of more host CPU) or put the heaviest-IO
   VMs on the per-VM `--ovm-timer-guard` for the best disk scaling with no residual
